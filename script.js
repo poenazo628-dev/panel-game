@@ -1,5 +1,7 @@
-// APIサーバーのURL
-const API_BASE_URL = 'https://panel-game-server.onrender.com';
+// ▼▼▼▼▼【最終ステップで書き換える場所】▼▼▼▼▼
+// Renderで公開したサーバーのURLをここに貼り付ける
+const API_BASE_URL = 'https://panel-game-server.onrender.com'; 
+// ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
 
 // URLから自分のプレイヤーIDを取得する
 const urlParams = new URLSearchParams(window.location.search);
@@ -9,13 +11,10 @@ const myPlayerId = urlParams.get('player') || 'Player1';
 window.onload = function() {
     console.log(`ページが読み込まれました。${myPlayerId}としてゲームを初期化します。`);
 
-    // ▼▼▼ 管理者かどうかで操作パネルの表示を切り替える ▼▼▼
     const controlsPanel = document.getElementById('controls');
     if (myPlayerId.toLowerCase() !== 'admin') {
-        // もしプレイヤーIDが'Admin' (大文字小文字問わず) でなければ、操作パネルを隠す
         controlsPanel.style.display = 'none';
     }
-    // ▲▲▲ ここまで追加 ▲▲▲
 
     const nextRoundButton = document.getElementById('next-round-button');
     if (nextRoundButton) {
@@ -48,24 +47,21 @@ window.onload = function() {
     initializeGame();
 };
 
-// ゲームの初期化を行う関数
+// ... (これ以降の関数の内容は前回から変更ありません) ...
+
 async function initializeGame() {
     try {
-        // ▼▼▼ 管理者はPlayer1の盤面を基準として表示する ▼▼▼
         const boardOwner = myPlayerId.toLowerCase() === 'admin' ? 'Player1' : myPlayerId;
         const response = await fetch(`${API_BASE_URL}/get_status?player=${boardOwner}`);
-        // ▲▲▲ ここまで修正 ▲▲▲
         
         const data = await response.json();
         if (data.status === 'success') {
             const { round, n, panels } = data;
-            // ▼▼▼ 表示メッセージを管理者とプレイヤーで切り替える ▼▼▼
             if (myPlayerId.toLowerCase() === 'admin') {
                 document.getElementById('info-display').textContent = `【管理者モード】 | ラウンド ${round} (${n}x${n})`;
             } else {
                 document.getElementById('info-display').textContent = `あなたは ${myPlayerId} です | ラウンド ${round} (${n}x${n})`;
             }
-            // ▲▲▲ ここまで修正 ▲▲▲
             createGrid(n, panels);
         } else {
             document.getElementById('info-display').textContent = 'エラー: ゲーム情報の取得に失敗しました。';
@@ -76,10 +72,6 @@ async function initializeGame() {
     }
 }
 
-/**
- * スコアを画面に表示する関数
- * @param {Array} results - サーバーから受け取った結果の配列
- */
 function displayScores(results) {
     const gameBoard = document.getElementById('game-board');
     const scoreboardContainer = document.getElementById('scoreboard-container');
@@ -120,10 +112,6 @@ function displayScores(results) {
     scoreboardContainer.appendChild(table);
 }
 
-
-/**
- * グリッド（ゲーム盤）を生成する関数
- */
 function createGrid(n, panels) {
     const gameBoard = document.getElementById('game-board');
     const scoreboardContainer = document.getElementById('scoreboard-container');
@@ -145,18 +133,15 @@ function createGrid(n, panels) {
 
                 const isAdminMode = document.getElementById('admin-mode-checkbox').checked;
 
-                // ▼▼▼ 管理者が通常クリックした場合は何もしないようにする ▼▼▼
                 if (myPlayerId.toLowerCase() === 'admin' && !isAdminMode) {
                     console.log("管理者モードではないため、パネルは開きません。");
                     return; 
                 }
-                // ▲▲▲ ここまで修正 ▲▲▲
 
                 panel.classList.add('is-hidden');
                 
                 const endpoint = isAdminMode ? '/admin_open_panel' : '/open_panel';
                 
-                // ▼▼▼ 管理者モードの時はPlayer1のパネルを開けるようにする ▼▼▼
                 const targetPlayer = myPlayerId.toLowerCase() === 'admin' ? 'Player1' : myPlayerId;
                 
                 try {
@@ -164,7 +149,7 @@ function createGrid(n, panels) {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({
-                            user: targetPlayer, // どのプレイヤーのパネルを操作するか指定
+                            user: targetPlayer,
                             row: r + 1,
                             col: c + 1,
                         }),
