@@ -1,18 +1,28 @@
+import os
+import json
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import gspread
 
-# --- 設定項目 ---
-KEY_FILE_NAME = 'project-tabetabe-6bd62e07fa6f.json' # あなたのJSONファイル名に書き換えてください
-SPREADSHEET_NAME = 'tabetabe-panel' # あなたのスプレッドシート名に書き換えてください
-# ----------------
+# --- 環境変数から認証情報を読み込む ---
+# Renderの環境変数 'GSPREAD_CREDENTIALS' からJSON文字列を読み込む
+creds_json_str = os.getenv('GSPREAD_CREDENTIALS')
+if not creds_json_str:
+    raise ValueError("環境変数 GSPREAD_CREDENTIALS が設定されていません。")
 
+# JSON文字列を辞書型に変換
+creds_dict = json.loads(creds_json_str)
+gc = gspread.service_account_from_dict(creds_dict)
+# ------------------------------------
+
+# --- スプレッドシート名を設定 ---
+SPREADSHEET_NAME = 'tabetabe-panel' # あなたのスプレッドシート名
+# --------------------------------
 
 app = Flask(__name__)
 CORS(app)
 
 try:
-    gc = gspread.service_account(filename=KEY_FILE_NAME)
     spreadsheet = gc.open(SPREADSHEET_NAME)
     print("スプレッドシートへの接続に成功しました。")
 except Exception as e:
@@ -37,10 +47,12 @@ def calculate_scores():
         total_panels = n * n
         
         results = []
-        for i in range(1, 9):
-            player_id = f"Player{i}"
-            try:
-                player_sheet = spreadsheet.worksheet(player_id)
+        player_sheets = spreadsheet.worksheets()
+        player_ids = [f"Player{i}" for i in range(1, 9)]
+
+        for player_sheet in player_sheets:
+            if player_sheet.title in player_ids:
+                player_id = player_sheet.title
                 panel_data = player_sheet.get(f'A1:{colnum_to_a1(n)}{n}')
                 
                 opened_count = 0
@@ -61,20 +73,18 @@ def calculate_scores():
                     "closed": closed_count
                 })
 
-            except gspread.exceptions.WorksheetNotFound:
-                print(f"{player_id}シートが見つかりません。スコア計算から除外します。")
-                continue
-
+        # スコアが高い順に並び替え
+        results.sort(key=lambda x: x['score'], reverse=True)
         return jsonify({"status": "success", "results": results})
 
     except Exception as e:
         print(f"!!! /calculate_scoresでエラー発生: {e} !!!")
         return jsonify({"status": "error", "message": str(e)})
 
-# ▼▼▼▼▼ ここの関数を修正しました ▼▼▼▼▼
 @app.route('/get_status')
 def get_status():
-    if not spreadsheet: return jsonify({"status": "error"})
+    if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
+    player_id = 'Player1' # デフォルト値
     try:
         player_id = request.args.get('player', 'Player1')
         admin_sheet = spreadsheet.worksheet('AdminControl')
@@ -82,20 +92,19 @@ def get_status():
         n = current_round + 1
         player_sheet = spreadsheet.worksheet(player_id)
         
-        # バグ修正：ラウンドのサイズに合わせて、正しい範囲のデータを取得するように修正
         panel_data = player_sheet.get(f'A1:{colnum_to_a1(n)}{n}')
         
         return jsonify({"status": "success", "round": current_round, "n": n, "panels": panel_data})
     except Exception as e:
-        print(f"!!! /get_statusでエラー発生: {e} !!!")
+        print(f"!!! /get_statusでエラー発生 (Player: {player_id}): {e} !!!")
         return jsonify({"status": "error", "message": str(e)})
-# ▲▲▲▲▲ ここまで修正 ▲▲▲▲▲
 
 @app.route('/open_panel', methods=['POST'])
 def open_panel():
-    if not spreadsheet: return jsonify({"status": "error"})
+    if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
+    data = request.json
+    user_id = 'Unknown'
     try:
-        data = request.json
         user_id = data.get('user', 'Unknown')
         row = data.get('row')
         col = data.get('col')
@@ -103,14 +112,15 @@ def open_panel():
         worksheet.update_cell(row, col, '1')
         return jsonify({"status": "success"})
     except Exception as e:
-        print(f"!!! /open_panelでエラー発生 (Player: {data.get('user', 'Unknown')}): {e} !!!")
+        print(f"!!! /open_panelでエラー発生 (Player: {user_id}): {e} !!!")
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/admin_open_panel', methods=['POST'])
 def admin_open_panel():
-    if not spreadsheet: return jsonify({"status": "error"})
+    if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
+    data = request.json
+    user_id = 'Unknown'
     try:
-        data = request.json
         user_id = data.get('user', 'Unknown')
         row = data.get('row')
         col = data.get('col')
@@ -118,22 +128,24 @@ def admin_open_panel():
         worksheet.update_cell(row, col, '2')
         return jsonify({"status": "success"})
     except Exception as e:
-        print(f"!!! /admin_open_panelでエラー発生 (Player: {data.get('user', 'Unknown')}): {e} !!!")
+        print(f"!!! /admin_open_panelでエラー発生 (Player: {user_id}): {e} !!!")
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/next_round', methods=['POST'])
 def next_round():
-    if not spreadsheet: return jsonify({"status": "error"})
+    if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
     try:
         admin_sheet = spreadsheet.worksheet('AdminControl')
         current_round = int(admin_sheet.cell(1, 2).value)
         next_round_num = current_round + 1
+        if next_round_num > 9:
+            next_round_num = 1
         admin_sheet.update_cell(1, 2, next_round_num)
         
         n = next_round_num + 1
         start_col_num = 1
         if next_round_num > 1:
-            for i in range(2, n):
+            for i in range(2, next_round_num + 1):
                 start_col_num += i
         
         end_col_num = start_col_num + n - 1
@@ -154,22 +166,26 @@ def next_round():
                     else:
                         row_data.append('0')
                 else:
-                    row_data.append('0')
+                    row_data.append('')
             new_board_data.append(row_data)
 
-        for i in range(1, 9):
-            player_id = f"Player{i}"
+        player_ids = [f"Player{i}" for i in range(1, 9)]
+        for player_id in player_ids:
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
                 player_sheet.update('A1:J10', new_board_data)
             except gspread.exceptions.WorksheetNotFound:
-                print(f"!!! {player_id}シートが見つかりません。スキップします。 !!!")
+                print(f"!!! {player_id}シートが見つかりません。盤面リセットをスキップします。 !!!")
         
         return jsonify({"status": "success"})
     except Exception as e:
         print(f"!!! /next_roundでエラー発生: {e} !!!")
         return jsonify({"status": "error", "message": str(e)})
 
+# Gunicornが 'app' という名前のFlaskインスタンスを探すため
+if 'gunicorn' in os.environ.get('SERVER_SOFTWARE', ''):
+    app_for_gunicorn = app
+
 if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=5000)
+    app.run(debug=False, host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
 
