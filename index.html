@@ -1,0 +1,31 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>パネルゲーム</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h1>パネルゲーム</h1>
+    
+    <!-- 操作パネル -->
+    <div id="controls">
+        <button id="next-round-button">次のラウンドへ</button>
+        <input type="checkbox" id="admin-mode-checkbox">
+        <label for="admin-mode-checkbox">管理者モード</label>
+        <!-- ▼▼▼ スコア計算ボタンを追加 ▼▼▼ -->
+        <button id="calculate-score-button">スコアを計算</button>
+    </div>
+
+    <div id="info-display"></div>
+
+    <!-- ▼▼▼ 結果表示用のコンテナを追加 ▼▼▼ -->
+    <div id="scoreboard-container"></div>
+
+    <div id="game-board"></div>
+
+    <script src="script.js"></script>
+</body>
+</html>
+
