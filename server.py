@@ -1,23 +1,16 @@
 import os
 import json
-import sys # printを強制的に出力するために追加
-import traceback # エラーの詳細を記録するために追加
+import sys
+import traceback
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import gspread
 
 # --- ラウンドごとの背景画像リスト (png形式に更新) ---
-# 画像名をtabetabe1.png ~ tabetabe9.pngに設定
 ROUND_IMAGES = [
-    'tabetabe1.png',
-    'tabetabe2.png',
-    'tabetabe3.png',
-    'tabetabe4.png',
-    'tabetabe5.png',
-    'tabetabe6.png',
-    'tabetabe7.png',
-    'tabetabe8.png',
-    'tabetabe9.png',
+    'tabetabe1.png', 'tabetabe2.png', 'tabetabe3.png',
+    'tabetabe4.png', 'tabetabe5.png', 'tabetabe6.png',
+    'tabetabe7.png', 'tabetabe8.png', 'tabetabe9.png',
 ]
 # ------------------------------------
 
@@ -25,12 +18,10 @@ ROUND_IMAGES = [
 creds_json_str = os.getenv('GSPREAD_CREDENTIALS')
 if not creds_json_str:
     raise ValueError("環境変数 GSPREAD_CREDENTIALS が設定されていません。")
-
 creds_dict = json.loads(creds_json_str)
 gc = gspread.service_account_from_dict(creds_dict)
 # ------------------------------------
 
-# スプレッドシート名を更新
 SPREADSHEET_NAME = 'tabetabe-panel'
 
 app = Flask(__name__)
@@ -52,26 +43,15 @@ def colnum_to_a1(n):
 
 @app.route('/get_status')
 def get_status():
-    print("\n--- /get_status が呼び出されました ---", flush=True)
-    if not spreadsheet: 
-        print("エラー: スプレッドシートに接続されていません。", flush=True)
-        return jsonify({"status": "error", "message": "Spreadsheet not connected"})
-    
+    if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
     player_id = 'Player1'
     try:
         player_id = request.args.get('player', 'Player1')
-        if player_id == 'Admin':
-            player_id = 'Player1'
-        print(f"1. プレイヤーIDを決定: {player_id}", flush=True)
-
+        if player_id == 'Admin': player_id = 'Player1'
+        
         admin_sheet = spreadsheet.worksheet('AdminControl')
-        print("2. 'AdminControl'シートを取得成功。", flush=True)
-
         cell_value = admin_sheet.cell(1, 2).value
-        print(f"3. B1セルの値を取得: '{cell_value}'", flush=True)
-
         current_round = int(cell_value)
-        print(f"4. ラウンド番号を決定: {current_round}", flush=True)
         n = current_round + 1
         
         background_image = ''
@@ -80,30 +60,20 @@ def get_status():
             background_image = ROUND_IMAGES[round_index]
         else:
             if ROUND_IMAGES: background_image = ROUND_IMAGES[0]
-        print(f"5. 背景画像を決定: '{background_image}'", flush=True)
 
         player_sheet = spreadsheet.worksheet(player_id)
-        print(f"6. '{player_id}'シートを取得成功。", flush=True)
-
         panel_range = f'A1:{colnum_to_a1(n)}{n}'
         panel_data = player_sheet.get(panel_range)
-        print(f"7. '{player_id}'シートから範囲 '{panel_range}' のデータを取得成功。", flush=True)
         
-        print("--- /get_status 成功 ---", flush=True)
         return jsonify({
-            "status": "success",
-            "round": current_round,
-            "n": n,
-            "panels": panel_data,
-            "backgroundImage": background_image
+            "status": "success", "round": current_round, "n": n,
+            "panels": panel_data, "backgroundImage": background_image
         })
     except Exception as e:
         print("!!! /get_statusで詳細なエラーが発生しました !!!", flush=True)
         traceback.print_exc(file=sys.stdout)
-        print(f"!!! エラー概要 (Player: {player_id}): {e} !!!", flush=True)
         return jsonify({"status": "error", "message": str(e)})
 
-# ... (他のAPI関数は変更なし) ...
 @app.route('/calculate_scores')
 def calculate_scores():
     if not spreadsheet: return jsonify({"status": "error", "message": "Spreadsheet not connected"})
@@ -120,33 +90,37 @@ def calculate_scores():
         for player_sheet in player_sheets:
             if player_sheet.title in player_ids:
                 player_id = player_sheet.title
-                panel_data = player_sheet.get(f'A1:{colnum_to_a1(n)}{n}')
+                panel_range = f'A1:{colnum_to_a1(n)}{n}'
+                panel_data = player_sheet.get(panel_range, value_render_option='UNFORMATTED_VALUE')
                 
                 opened_count = 0
+                # --- ▼▼▼ スコア計算をより安全な方法に修正 ▼▼▼ ---
                 for r in range(n):
                     for c in range(n):
+                        # セルが存在するかをチェックしてから値を比較する
                         if r < len(panel_data) and c < len(panel_data[r]):
-                            cell = panel_data[r][c]
+                            cell = str(panel_data[r][c]) # 文字列に変換して比較
                             if cell == '1' or cell == '2':
                                 opened_count += 1
+                # --- ▲▲▲ ここまで修正 ▲▲▲ ---
                 
                 closed_count = total_panels - opened_count
                 score = abs(closed_count - opened_count)
                 
                 results.append({
-                    "player": player_id,
-                    "score": score,
-                    "opened": opened_count,
-                    "closed": closed_count
+                    "player": player_id, "score": score,
+                    "opened": opened_count, "closed": closed_count
                 })
 
         results.sort(key=lambda x: x['score'], reverse=True)
         return jsonify({"status": "success", "results": results})
 
     except Exception as e:
-        print(f"!!! /calculate_scoresでエラー発生: {e} !!!")
-        traceback.print_exc()
+        print(f"!!! /calculate_scoresでエラー発生: {e} !!!", flush=True)
+        traceback.print_exc(file=sys.stdout)
         return jsonify({"status": "error", "message": str(e)})
+
+# ... (残りのAPI関数は変更なし) ...
 
 @app.route('/open_panel', methods=['POST'])
 def open_panel():
@@ -161,8 +135,8 @@ def open_panel():
         worksheet.update_cell(row, col, '1')
         return jsonify({"status": "success"})
     except Exception as e:
-        print(f"!!! /open_panelでエラー発生 (Player: {user_id}): {e} !!!")
-        traceback.print_exc()
+        print(f"!!! /open_panelでエラー発生 (Player: {user_id}): {e} !!!", flush=True)
+        traceback.print_exc(file=sys.stdout)
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/admin_open_panel', methods=['POST'])
@@ -178,8 +152,8 @@ def admin_open_panel():
         worksheet.update_cell(row, col, '2')
         return jsonify({"status": "success"})
     except Exception as e:
-        print(f"!!! /admin_open_panelでエラー発生 (Player: {user_id}): {e} !!!")
-        traceback.print_exc()
+        print(f"!!! /admin_open_panelでエラー発生 (Player: {user_id}): {e} !!!", flush=True)
+        traceback.print_exc(file=sys.stdout)
         return jsonify({"status": "error", "message": str(e)})
 
 @app.route('/next_round', methods=['POST'])
@@ -189,8 +163,7 @@ def next_round():
         admin_sheet = spreadsheet.worksheet('AdminControl')
         current_round = int(admin_sheet.cell(1, 2).value)
         next_round_num = current_round + 1
-        if next_round_num > 9:
-            next_round_num = 1
+        if next_round_num > 9: next_round_num = 1
         admin_sheet.update_cell(1, 2, next_round_num)
         
         n = next_round_num + 1
@@ -226,15 +199,15 @@ def next_round():
                 player_sheet = spreadsheet.worksheet(player_id)
                 player_sheet.update('A1:J10', new_board_data)
             except gspread.exceptions.WorksheetNotFound:
-                print(f"!!! {player_id}シートが見つかりません。盤面リセットをスキップします。 !!!")
+                print(f"!!! {player_id}シートが見つかりません。盤面リセットをスキップします。 !!!", flush=True)
         
         return jsonify({"status": "success"})
     except Exception as e:
-        print(f"!!! /next_roundでエラー発生: {e} !!!")
-        traceback.print_exc()
+        print(f"!!! /next_roundでエラー発生: {e} !!!", flush=True)
+        traceback.print_exc(file=sys.stdout)
         return jsonify({"status": "error", "message": str(e)})
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 8080))
-    app.run(debug=True, host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port)
 
