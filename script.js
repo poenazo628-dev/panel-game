@@ -1,8 +1,8 @@
+// APIサーバーのURL
 // ▼▼▼▼▼【最終ステップで書き換える場所】▼▼▼▼▼
 // Renderで公開したサーバーのURLをここに貼り付ける
-const API_BASE_URL = 'https://panel-game-server.onrender.com'; 
+const API_BASE_URL = 'https://panel-game-server.onrender.com'; // このURLはご自身のものに書き換えてください
 // ▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲▲
-
 
 let myPlayerId = 'Player1'; // デフォルトのプレイヤーID
 
@@ -11,6 +11,16 @@ window.onload = function() {
     const urlParams = new URLSearchParams(window.location.search);
     myPlayerId = urlParams.get('player') || 'Player1'; // URLからプレイヤーIDを取得
     console.log(`ページが読み込まれました。${myPlayerId}としてゲームを初期化します。`);
+    
+    // Adminの時だけ管理者パネルを表示し、ボタンを有効化する
+    if (myPlayerId === 'Admin') {
+        const adminPanel = document.getElementById('admin-panel');
+        if (adminPanel) {
+            adminPanel.style.display = 'block';
+            setupAdminControls();
+        }
+    }
+
     initializeGame();
 };
 
@@ -24,13 +34,13 @@ async function initializeGame() {
             const round = data.round;
             const n = data.n;
             const panels = data.panels;
-            const backgroundImage = data.backgroundImage; // 背景画像ファイル名を取得
+            const backgroundImage = data.backgroundImage;
             
             const infoDisplay = document.getElementById('info-display');
             if (infoDisplay) {
                 infoDisplay.textContent = `ラウンド ${round} (${n}x${n})`;
             }
-            createGrid(n, panels, backgroundImage); // 背景画像ファイル名を渡す
+            createGrid(n, panels, backgroundImage);
         } else {
             document.getElementById('info-display').textContent = 'エラー：ゲーム情報の取得に失敗しました。';
         }
@@ -42,9 +52,6 @@ async function initializeGame() {
 
 /**
  * グリッドを生成する関数
- * @param {number} n - グリッドのサイズ
- * @param {Array<Array<string>>} panels - パネルの状態
- * @param {string} backgroundImage - 背景画像のファイル名
  */
 function createGrid(n, panels, backgroundImage) {
     const gameBoard = document.getElementById('game-board');
@@ -53,7 +60,6 @@ function createGrid(n, panels, backgroundImage) {
     gameBoard.innerHTML = '';
     gameBoard.style.setProperty('--n', n);
 
-    // --- ▼▼▼ 背景画像を設定するコード（デバッグ機能付き） ▼▼▼ ---
     if (backgroundImage) {
         console.log(`[ブラウザ側の確認] 背景画像として'${backgroundImage}'を設定しようとしています。`);
         gameBoard.style.backgroundImage = `url('${backgroundImage}')`;
@@ -61,7 +67,6 @@ function createGrid(n, panels, backgroundImage) {
         console.log('[ブラウザ側の確認] 背景画像の情報がサーバーから送られてきませんでした。');
         gameBoard.style.backgroundImage = 'none';
     }
-    // --- ▲▲▲ ここまで ▲▲▲ ---
 
     for (let r = 0; r < n; r++) {
         for (let c = 0; c < n; c++) {
@@ -80,9 +85,7 @@ function createGrid(n, panels, backgroundImage) {
                 const isAdmin = document.getElementById('admin-mode-checkbox')?.checked;
                 const endpoint = isAdmin ? '/admin_open_panel' : '/open_panel';
                 
-                // --- ▼▼▼ 送信IDのデバッグ機能 ▼▼▼ ---
                 console.log(`[ブラウザ側の確認] サーバーに送信するID: '${myPlayerId}'`);
-                // --- ▲▲▲ ここまで ▲▲▲ ---
 
                 try {
                     await fetch(`${API_BASE_URL}${endpoint}`, {
@@ -99,15 +102,17 @@ function createGrid(n, panels, backgroundImage) {
     }
 }
 
-// ... (残りのコードは変更なし) ...
-
-// 管理者用の操作パネルをセットアップする関数
+/**
+ * 管理者用の操作パネルをセットアップする関数
+ */
 function setupAdminControls() {
     const nextRoundButton = document.getElementById('next-round-button');
     if (nextRoundButton) {
         nextRoundButton.addEventListener('click', async () => {
+            console.log('「次のラウンドへ」ボタンがクリックされました。');
             try {
                 await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
+                // 自分の画面だけリロードする
                 window.location.reload();
             } catch (error) {
                 console.error('次のラウンドへの移行で通信エラー:', error);
@@ -117,11 +122,16 @@ function setupAdminControls() {
 
     const calculateScoreButton = document.getElementById('calculate-score-button');
     if (calculateScoreButton) {
-        calculateScoreButton.addEventListener('click', displayScores);
+        calculateScoreButton.addEventListener('click', () => {
+            console.log('「スコアを計算」ボタンがクリックされました。');
+            displayScores();
+        });
     }
 }
 
-// スコアを計算して表示する関数
+/**
+ * スコアを計算して表示する関数
+ */
 async function displayScores() {
     try {
         const response = await fetch(`${API_BASE_URL}/calculate_scores`);
@@ -130,7 +140,11 @@ async function displayScores() {
         if (data.status === 'success') {
             const gameBoard = document.getElementById('game-board');
             const scoreContainer = document.getElementById('score-container');
+            const adminPanel = document.getElementById('admin-panel');
+
             if (gameBoard) gameBoard.style.display = 'none';
+            if (adminPanel) adminPanel.style.display = 'none'; // 管理者パネルも非表示に
+
             if (scoreContainer) {
                 scoreContainer.innerHTML = '<h2>スコアランキング</h2>';
                 const table = document.createElement('table');
@@ -165,16 +179,3 @@ async function displayScores() {
         console.error('スコア計算で通信エラー:', error);
     }
 }
-
-// ページ読み込み時に管理者かどうかを判定してボタン表示を切り替える
-document.addEventListener('DOMContentLoaded', () => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const playerId = urlParams.get('player');
-    const adminPanel = document.getElementById('admin-panel');
-
-    if (playerId === 'Admin' && adminPanel) {
-        adminPanel.style.display = 'block';
-        setupAdminControls();
-    }
-});
-
