@@ -188,7 +188,10 @@ def calculate_scores():
             score = abs(unopened_count - opened_count)
             results.append({"player": player_id, "score": score, "opened": opened_count})
 
-        results.sort(key=lambda x: x['score'])
+        # --- ▼▼▼ ここを修正 ▼▼▼ ---
+        # スコアの降順（大きい順）に並べ替える
+        results.sort(key=lambda x: x['score'], reverse=True)
+        # --- ▲▲▲ ここまで修正 ▲▲▲ ---
         
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.append_row([f"Round {current_round} Results"])
