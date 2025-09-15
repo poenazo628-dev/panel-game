@@ -32,15 +32,35 @@ async function initializeGame() {
 
         if (data.status === 'success') {
             const round = data.round;
-            const n = data.n;
-            const panels = data.panels;
-            const backgroundImage = data.backgroundImage;
-            
             const infoDisplay = document.getElementById('info-display');
-            if (infoDisplay) {
-                infoDisplay.textContent = `ラウンド ${round} (${n}x${n})`;
+            const gameBoard = document.getElementById('game-board');
+            const scoreContainer = document.getElementById('score-container');
+
+            // --- ▼▼▼ ラウンド0の処理を追加 ▼▼▼ ---
+            if (round === 0) {
+                if (infoDisplay) infoDisplay.textContent = 'ゲーム開始待機中...';
+                if (gameBoard) gameBoard.style.display = 'none';
+                if (scoreContainer) scoreContainer.style.display = 'none';
+                
+                // 管理者の場合、「次のラウンドへ」ボタンを「ゲーム開始」として表示
+                if (myPlayerId === 'Admin') {
+                    const nextRoundButton = document.getElementById('next-round-button');
+                    if (nextRoundButton) nextRoundButton.textContent = 'ゲーム開始';
+                }
+
+            } else {
+            // --- ▲▲▲ ここまで追加 ▲▲▲ ---
+                const n = data.n;
+                const panels = data.panels;
+                const backgroundImage = data.backgroundImage;
+                
+                if (infoDisplay) {
+                    infoDisplay.textContent = `ラウンド ${round} (${n}x${n})`;
+                }
+                if (gameBoard) gameBoard.style.display = 'grid'; // 表示を確実にする
+                createGrid(n, panels, backgroundImage);
             }
-            createGrid(n, panels, backgroundImage);
+
         } else {
             document.getElementById('info-display').textContent = 'エラー：ゲーム情報の取得に失敗しました。';
         }
@@ -106,6 +126,22 @@ function createGrid(n, panels, backgroundImage) {
  * 管理者用の操作パネルをセットアップする関数
  */
 function setupAdminControls() {
+    // --- ▼▼▼ リセットボタンの機能を追加 ▼▼▼ ---
+    const resetGameButton = document.getElementById('reset-game-button');
+    if (resetGameButton) {
+        resetGameButton.addEventListener('click', async () => {
+            // 確認ダイアログは挟まずに即時実行
+            console.log('「ゲームをリセット」ボタンがクリックされました。');
+            try {
+                await fetch(`${API_BASE_URL}/reset_game`, { method: 'POST' });
+                window.location.reload();
+            } catch (error) {
+                console.error('ゲームリセットで通信エラー:', error);
+            }
+        });
+    }
+    // --- ▲▲▲ ここまで追加 ▲▲▲ ---
+
     const nextRoundButton = document.getElementById('next-round-button');
     if (nextRoundButton) {
         nextRoundButton.addEventListener('click', async () => {
@@ -143,7 +179,7 @@ async function displayScores() {
             const adminPanel = document.getElementById('admin-panel');
 
             if (gameBoard) gameBoard.style.display = 'none';
-            if (adminPanel) adminPanel.style.display = 'none'; // 管理者パネルも非表示に
+            if (adminPanel) adminPanel.style.display = 'none'; 
 
             if (scoreContainer) {
                 scoreContainer.innerHTML = '<h2>スコアランキング</h2>';
@@ -172,6 +208,25 @@ async function displayScores() {
                     tbody.appendChild(row);
                 });
                 scoreContainer.appendChild(table);
+                
+                if (myPlayerId === 'Admin') {
+                    const nextRoundBtnOnScore = document.createElement('button');
+                    nextRoundBtnOnScore.textContent = '次のラウンドへ';
+                    nextRoundBtnOnScore.style.marginTop = '20px';
+                    nextRoundBtnOnScore.style.padding = '10px 20px';
+                    nextRoundBtnOnScore.style.fontSize = '1.1em';
+
+                    nextRoundBtnOnScore.addEventListener('click', async () => {
+                         try {
+                            await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
+                            window.location.reload();
+                        } catch (error) {
+                            console.error('スコア画面からの次のラウンドへの移行で通信エラー:', error);
+                        }
+                    });
+                    scoreContainer.appendChild(nextRoundBtnOnScore);
+                }
+                
                 scoreContainer.style.display = 'block';
             }
         }
@@ -179,3 +234,4 @@ async function displayScores() {
         console.error('スコア計算で通信エラー:', error);
     }
 }
+
