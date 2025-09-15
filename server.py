@@ -34,7 +34,6 @@ except Exception as e:
 @app.route('/get_status')
 def get_status():
     player_id = request.args.get('player', 'Player1')
-    print(f"\n--- /get_status が呼び出されました (Player: {player_id}) ---")
 
     if not spreadsheet:
         return jsonify({"status": "error", "message": "Spreadsheet not connected"}), 500
@@ -44,10 +43,10 @@ def get_status():
         cell_value = admin_sheet.cell(1, 2).value
         current_round = int(cell_value) if cell_value and cell_value.isdigit() else 0
         
-        if current_round > 9: # ゲームクリア状態
+        if current_round > 9:
             return jsonify({"status": "success", "round": "clear"})
             
-        if current_round == 0: # 待機状態
+        if current_round == 0:
             return jsonify({"status": "success", "round": 0})
 
         n = current_round + 1
@@ -63,7 +62,6 @@ def get_status():
             "panels": panel_data, "backgroundImage": background_image
         })
     except Exception as e:
-        print(f"!!! /get_statusでエラー発生: {e} !!!")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
@@ -95,7 +93,6 @@ def admin_open_panel():
 
 @app.route('/next_round', methods=['POST'])
 def next_round():
-    print("\n--- /next_round が呼び出されました ---")
     try:
         admin_sheet = spreadsheet.worksheet('AdminControl')
         current_round_str = admin_sheet.cell(1, 2).value
@@ -103,7 +100,6 @@ def next_round():
         
         new_round = current_round + 1
         admin_sheet.update_cell(1, 2, str(new_round))
-        print(f"1. ラウンドを {new_round} に更新しました。")
 
         if new_round > 9:
              return jsonify({"status": "success", "new_round": "clear"})
@@ -111,14 +107,13 @@ def next_round():
         presets_sheet = spreadsheet.worksheet('AdminPresets')
         n = new_round + 1
         
-        start_col = 1
-        if new_round > 1:
-            # (1+1)+ (2+1) + ...
-            start_col = sum(i + 1 for i in range(1, new_round))
+        # --- 読み取り範囲を動的に計算 ---
+        start_row = sum(i + 1 for i in range(1, new_round - 1)) + 2 if new_round > 1 else 2
+        start_col = sum(i + 1 for i in range(1, new_round)) + 1
         
+        end_row = start_row + n - 1
         end_col = start_col + n - 1
-        preset_range = f'{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(n + 1, end_col)}'
-        print(f"2. AdminPresetsから範囲 '{preset_range}' を読み取ります。")
+        preset_range = f'{gspread.utils.rowcol_to_a1(start_row, start_col)}:{gspread.utils.rowcol_to_a1(end_row, end_col)}'
         preset_data = presets_sheet.get(preset_range)
 
         for i in range(1, 9):
@@ -128,8 +123,7 @@ def next_round():
                 
                 max_size = 10
                 max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
-                empty_board_data = [[''] * max_size for _ in range(max_size)]
-                player_sheet.update(max_range, empty_board_data)
+                player_sheet.update(max_range, [[''] * max_size for _ in range(max_size)])
 
                 update_cells = []
                 for r_idx, row_data in enumerate(preset_data):
@@ -140,20 +134,16 @@ def next_round():
 
                 if update_cells:
                     player_sheet.update_cells(update_cells, value_input_option='RAW')
-                print(f"3. '{player_id}'シートをプリセットで更新しました。")
             except gspread.WorksheetNotFound:
-                print(f"警告: '{player_id}'シートが見つからなかったのでスキップします。")
                 continue
         
         return jsonify({"status": "success", "new_round": new_round})
     except Exception as e:
-        print(f"!!! /next_roundでエラー発生: {e} !!!")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/calculate_scores', methods=['GET'])
 def calculate_scores():
-    print("\n--- /calculate_scores が呼び出されました ---")
     try:
         admin_sheet = spreadsheet.worksheet('AdminControl')
         current_round = int(admin_sheet.cell(1, 2).value)
@@ -166,17 +156,12 @@ def calculate_scores():
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
                 all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
-                opened_count = 0
-                for row in all_values:
-                    for cell in row:
-                        if cell == '1' or cell == '2':
-                            opened_count += 1
+                opened_count = sum(row.count('1') + row.count('2') for row in all_values if row)
                 
                 unopened_count = total_panels - opened_count
                 score = abs(unopened_count - opened_count)
                 results.append({"player": player_id, "score": score, "opened": opened_count})
             except gspread.WorksheetNotFound:
-                print(f"警告: '{player_id}'シートが見つからなかったため、スコア計算から除外します。")
                 continue
         
         results.sort(key=lambda x: x['score'], reverse=True)
@@ -188,34 +173,27 @@ def calculate_scores():
 
         return jsonify({"status": "success", "results": results})
     except Exception as e:
-        print(f"!!! /calculate_scoresでエラー発生: {e} !!!")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/reset_game', methods=['POST'])
 def reset_game():
-    print("\n--- /reset_game が呼び出されました ---")
     try:
         admin_sheet = spreadsheet.worksheet('AdminControl')
         admin_sheet.update_cell(1, 2, '0')
-        print("1. ラウンドを0にリセットしました。")
 
         for i in range(1, 9):
             try:
                 player_sheet = spreadsheet.worksheet(f'Player{i}')
                 player_sheet.clear()
-                print(f"2. Player{i}シートをクリアしました。")
             except gspread.WorksheetNotFound:
-                print(f"警告: Player{i}シートが見つからなかったのでスキップします。")
                 continue
 
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.clear()
-        print("3. Resultsシートをクリアしました。")
 
         return jsonify({"status": "success", "message": "ゲームがリセットされました。"})
     except Exception as e:
-        print(f"!!! /reset_gameでエラー発生: {e} !!!")
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
