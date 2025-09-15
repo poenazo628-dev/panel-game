@@ -29,7 +29,7 @@ creds_dict = json.loads(creds_json_str)
 gc = gspread.service_account_from_dict(creds_dict)
 # ------------------------------------
 
-SPREADSHEET_NAME = 'panel-game'
+SPREADSHEET_NAME = 'tabetabe-panel'
 
 app = Flask(__name__)
 CORS(app)
