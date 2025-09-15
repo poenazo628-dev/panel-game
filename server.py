@@ -3,15 +3,14 @@ import json
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 import gspread
+import traceback
 
 # --- 画像とスプレッドシートの設定 ---
-# 画像ファイル名を指定
 ROUND_IMAGES = [
     'tabetabe1.png', 'tabetabe2.png', 'tabetabe3.png',
     'tabetabe4.png', 'tabetabe5.png', 'tabetabe6.png',
     'tabetabe7.png', 'tabetabe8.png', 'tabetabe9.png'
 ]
-# スプレッドシート名を指定
 SPREADSHEET_NAME = 'tabetabe-panel'
 # ------------------------------------
 
@@ -20,7 +19,6 @@ CORS(app)
 
 # --- スプレッドシートへの接続 ---
 try:
-    # Render環境変数から認証情報を読み込む
     creds_json_str = os.environ.get('GSPREAD_CREDENTIALS')
     creds_json = json.loads(creds_json_str)
     gc = gspread.service_account_from_dict(creds_json)
@@ -62,12 +60,17 @@ def get_status():
         background_image = ROUND_IMAGES[safe_round_index]
         print("5. 背景画像を決定:", background_image)
 
-        player_sheet = spreadsheet.worksheet(player_id)
-        print(f"6. '{player_id}'シートを取得成功。")
+        # --- ▼▼▼ ここを修正 ▼▼▼ ---
+        # Adminの場合は、盤面表示用にPlayer1のシートを参照する
+        sheet_to_fetch = 'Player1' if player_id == 'Admin' else player_id
+        # --- ▲▲▲ ここまで修正 ▲▲▲ ---
+
+        player_sheet = spreadsheet.worksheet(sheet_to_fetch)
+        print(f"6. '{sheet_to_fetch}'シートを取得成功。")
 
         cell_range = f'A1:{gspread.utils.rowcol_to_a1(n, n)}'
         panel_data = player_sheet.get(cell_range)
-        print(f"7. '{player_id}'シートから範囲 '{cell_range}' のデータを取得。")
+        print(f"7. '{sheet_to_fetch}'シートから範囲 '{cell_range}' のデータを取得。")
 
         print("--- /get_status 成功 ---")
         return jsonify({
@@ -76,11 +79,10 @@ def get_status():
         })
     except Exception as e:
         print(f"!!! /get_statusでエラー発生: {e} !!!")
-        import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# (他のAPI関数 ... /open_panel, /admin_open_panel, /next_round, /calculate_scores)
+# (他のAPI関数 ... /open_panel, /admin_open_panel, /next_round, /calculate_scores, /reset_game)
 @app.route('/open_panel', methods=['POST'])
 def open_panel():
     data = request.json
@@ -184,23 +186,19 @@ def calculate_scores():
         print(f"!!! /calculate_scoresでエラー発生: {e} !!!")
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# --- ▼▼▼ 新しいAPIを追加 ▼▼▼ ---
 @app.route('/reset_game', methods=['POST'])
 def reset_game():
     print("\n--- /reset_game が呼び出されました ---")
     try:
-        # 1. ラウンド番号を0に戻す
         admin_sheet = spreadsheet.worksheet('AdminControl')
         admin_sheet.update_cell(1, 2, '0')
         print("1. ラウンドを0にリセットしました。")
 
-        # 2. 全プレイヤーシートをクリアする
         for i in range(1, 9):
             player_sheet = spreadsheet.worksheet(f'Player{i}')
             player_sheet.clear()
             print(f"2. Player{i}シートをクリアしました。")
         
-        # 3. 結果シートをクリアする
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.clear()
         print("3. Resultsシートをクリアしました。")
@@ -209,7 +207,6 @@ def reset_game():
     except Exception as e:
         print(f"!!! /reset_gameでエラー発生: {e} !!!")
         return jsonify({"status": "error", "message": str(e)}), 500
-# --- ▲▲▲ ここまで追加 ▲▲▲ ---
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
