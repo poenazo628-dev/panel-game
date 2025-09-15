@@ -1,77 +1,88 @@
-// APIサーバーのURL
-const API_BASE_URL = 'https://panel-game-server.onrender.com'; // このURLはご自身のものに書き換えてください
+// --- 設定 ---
+// Renderで公開したサーバーのURLをここに貼り付ける
+const API_BASE_URL = 'https://panel-game-server.onrender.com'; 
+// ------------------------------------
 
-let myPlayerId = 'Player1'; // デフォルトのプレイヤーID
+// グローバル変数としてプレイヤーIDを保持
+let myPlayerId = 'Player1';
 
 // ページの読み込みが完了したら、ゲームの初期化を開始する
 window.onload = function() {
-    const urlParams = new URLSearchParams(window.location.search);
-    myPlayerId = urlParams.get('player') || 'Player1'; // URLからプレイヤーIDを取得
-    
-    if (myPlayerId === 'Admin') {
-        const adminPanel = document.getElementById('admin-panel');
-        if (adminPanel) {
-            adminPanel.style.display = 'block';
-            setupAdminControls();
-        }
+    // URLからプレイヤーIDを取得する
+    const params = new URLSearchParams(window.location.search);
+    const player = params.get('player');
+    if (player) {
+        myPlayerId = player;
     }
-
+    console.log(`ページが読み込まれました。${myPlayerId}としてゲームを初期化します。`);
     initializeGame();
 };
 
-// ゲームの初期化を行う関数
+// ゲームの初期化を行う非同期関数
 async function initializeGame() {
+    const infoDisplay = document.getElementById('info-display');
+    const gameBoard = document.getElementById('game-board');
+    const adminPanel = document.getElementById('admin-panel');
+    const scoreContainer = document.getElementById('score-container');
+
+    // 表示をリセット
+    gameBoard.style.display = 'grid';
+    scoreContainer.style.display = 'none';
+
     try {
         const response = await fetch(`${API_BASE_URL}/get_status?player=${myPlayerId}`);
+        if (!response.ok) {
+            throw new Error(`Server responded with status ${response.status}`);
+        }
         const data = await response.json();
 
         if (data.status === 'success') {
-            const round = data.round;
-            const infoDisplay = document.getElementById('info-display');
-            const gameBoard = document.getElementById('game-board');
-            const scoreContainer = document.getElementById('score-container');
-
-            if (round === 0) {
-                if (infoDisplay) infoDisplay.textContent = 'ゲーム開始待機中...';
-                if (gameBoard) gameBoard.style.display = 'none';
-                if (scoreContainer) scoreContainer.style.display = 'none';
-                
-                if (myPlayerId === 'Admin') {
-                    const nextRoundButton = document.getElementById('next-round-button');
-                    if (nextRoundButton) nextRoundButton.textContent = 'ゲーム開始';
-                }
+            if (data.round === 0) {
+                infoDisplay.textContent = 'ゲーム開始待機中...';
+                gameBoard.style.display = 'none';
+            } else if (data.round === 'clear') {
+                infoDisplay.textContent = 'ゲームクリア！お疲れ様でした！';
+                gameBoard.style.display = 'none';
+                scoreContainer.style.display = 'none';
+                adminPanel.style.display = myPlayerId === 'Admin' ? 'flex' : 'none'; // 管理者には操作パネルを表示
             } else {
-                const n = data.n;
-                const panels = data.panels;
-                const backgroundImage = data.backgroundImage;
+                const { round, n, panels, backgroundImage } = data;
+                infoDisplay.textContent = `ラウンド ${round} (${n}x${n})`;
                 
-                if (infoDisplay) {
-                    infoDisplay.textContent = `ラウンド ${round} (${n}x${n})`;
+                // --- 背景画像を設定 ---
+                if (backgroundImage) {
+                     console.log(`[ブラウザ側の確認] 背景画像として'${backgroundImage}'を設定しようとしています。`);
+                    gameBoard.style.backgroundImage = `url('${backgroundImage}')`;
                 }
-                if (gameBoard) gameBoard.style.display = 'grid';
-                createGrid(n, panels, backgroundImage);
+                
+                createGrid(n, panels);
             }
         } else {
-            document.getElementById('info-display').textContent = 'エラー：ゲーム情報の取得に失敗しました。';
+            throw new Error(data.message || 'ゲーム情報の取得に失敗しました。');
         }
     } catch (error) {
         console.error('通信エラー:', error);
-        document.getElementById('info-display').textContent = 'エラー：サーバーに接続できません。';
+        infoDisplay.textContent = `エラー: ${error.message}`;
+        gameBoard.style.display = 'none';
     }
+
+    // 管理者パネルの表示制御とイベントリスナーの設定
+    setupAdminControls();
 }
 
-// (他のJavaScript関数 ... createGrid, displayScores)
-function createGrid(n, panels, backgroundImage) {
+/**
+ * グリッド（ゲーム盤）を生成する関数
+ * @param {number} n - グリッドのサイズ (n x n)
+ * @param {Array<Array<string>>} panels - パネルの状態を保持する2次元配列
+ */
+function createGrid(n, panels) {
     const gameBoard = document.getElementById('game-board');
-    if (!gameBoard) return;
-    
     gameBoard.innerHTML = '';
     gameBoard.style.setProperty('--n', n);
 
-    if (backgroundImage) {
-        gameBoard.style.backgroundImage = `url('${backgroundImage}')`;
-    } else {
-        gameBoard.style.backgroundImage = 'none';
+    if (!panels || panels.length === 0) {
+        console.error("サーバーから有効なパネルデータを受け取れませんでした。");
+        return;
     }
 
     for (let r = 0; r < n; r++) {
@@ -79,133 +90,142 @@ function createGrid(n, panels, backgroundImage) {
             const panel = document.createElement('div');
             panel.classList.add('panel');
 
-            if (panels && panels[r] && (panels[r][c] === '1' || panels[r][c] === '2')) {
+            if (panels[r] && (panels[r][c] === '1' || panels[r][c] === '2')) {
                 panel.classList.add('is-hidden');
             }
 
-            panel.addEventListener('click', async () => {
-                if (panel.classList.contains('is-hidden')) return;
-                
-                panel.classList.add('is-hidden');
-
-                const isAdmin = document.getElementById('admin-mode-checkbox')?.checked;
-                const endpoint = isAdmin ? '/admin_open_panel' : '/open_panel';
-
-                try {
-                    await fetch(`${API_BASE_URL}${endpoint}`, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ user: myPlayerId, row: r + 1, col: c + 1 }),
-                    });
-                } catch (error) {
-                    console.error('パネル開放リクエストで通信エラー:', error);
-                }
+            panel.addEventListener('click', () => {
+                handlePanelClick(panel, r, c);
             });
+
             gameBoard.appendChild(panel);
         }
     }
 }
 
-function setupAdminControls() {
-    // --- ▼▼▼ リセットボタンの機能を追加 ▼▼▼ ---
-    const resetGameButton = document.getElementById('reset-game-button');
-    if (resetGameButton) {
-        resetGameButton.addEventListener('click', async () => {
-            console.log('「ゲームをリセット」ボタンがクリックされました。');
-            try {
-                await fetch(`${API_BASE_URL}/reset_game`, { method: 'POST' });
-                window.location.reload();
-            } catch (error) {
-                console.error('ゲームリセットで通信エラー:', error);
-            }
-        });
-    }
-    // --- ▲▲▲ ここまで追加 ▲▲▲ ---
-
-    const nextRoundButton = document.getElementById('next-round-button');
-    if (nextRoundButton) {
-        nextRoundButton.addEventListener('click', async () => {
-            try {
-                await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
-                window.location.reload();
-            } catch (error) {
-                console.error('次のラウンドへの移行で通信エラー:', error);
-            }
-        });
+/**
+ * パネルがクリックされたときの処理
+ * @param {HTMLElement} panel - クリックされたパネル要素
+ * @param {number} r - 行番号 (0から)
+ * @param {number} c - 列番号 (0から)
+ */
+async function handlePanelClick(panel, r, c) {
+    if (panel.classList.contains('is-hidden') || myPlayerId === 'Admin') {
+        const isAdminMode = document.getElementById('admin-mode-checkbox')?.checked;
+        if (myPlayerId !== 'Admin' || !isAdminMode) {
+             return; // 通常プレイヤーまたは管理者モードOFFなら何もしない
+        }
     }
 
-    const calculateScoreButton = document.getElementById('calculate-score-button');
-    if (calculateScoreButton) {
-        calculateScoreButton.addEventListener('click', () => {
-            displayScores();
+    panel.classList.add('is-hidden');
+
+    const isAdminMode = document.getElementById('admin-mode-checkbox')?.checked;
+    const endpoint = (myPlayerId === 'Admin' && isAdminMode) ? '/admin_open_panel' : '/open_panel';
+    
+    console.log(`[ブラウザ側の確認] サーバーに送信するID: '${myPlayerId}'`);
+
+    try {
+        await fetch(`${API_BASE_URL}${endpoint}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ user: myPlayerId, row: r + 1, col: c + 1 }),
         });
+    } catch (error) {
+        console.error('通信エラー:', error);
+        panel.classList.remove('is-hidden'); // エラーが起きたらパネルを元に戻す
     }
 }
 
-async function displayScores() {
-    try {
-        const response = await fetch(`${API_BASE_URL}/calculate_scores`);
-        const data = await response.json();
 
-        if (data.status === 'success') {
-            const gameBoard = document.getElementById('game-board');
-            const scoreContainer = document.getElementById('score-container');
-            const adminPanel = document.getElementById('admin-panel');
+/**
+ * 管理者用コントロールのセットアップ
+ */
+function setupAdminControls() {
+    const adminPanel = document.getElementById('admin-panel');
+    if (myPlayerId === 'Admin') {
+        adminPanel.style.display = 'flex';
 
-            if (gameBoard) gameBoard.style.display = 'none';
-            if (adminPanel) adminPanel.style.display = 'none'; 
+        const nextRoundBtn = document.getElementById('next-round-button');
+        const calcScoreBtn = document.getElementById('calc-score-button');
+        const resetBtn = document.getElementById('reset-game-button');
 
-            if (scoreContainer) {
-                scoreContainer.innerHTML = '<h2>スコアランキング</h2>';
-                const table = document.createElement('table');
-                table.innerHTML = `
-                    <thead>
-                        <tr>
-                            <th>順位</th>
-                            <th>プレイヤー</th>
-                            <th>スコア</th>
-                            <th>開いた枚数</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                    </tbody>
-                `;
-                const tbody = table.querySelector('tbody');
-                data.results.forEach((result, index) => {
-                    const row = document.createElement('tr');
-                    row.innerHTML = `
-                        <td>${index + 1}</td>
-                        <td>${result.player}</td>
-                        <td>${result.score}</td>
-                        <td>${result.opened}</td>
-                    `;
-                    tbody.appendChild(row);
-                });
-                scoreContainer.appendChild(table);
-                
-                if (myPlayerId === 'Admin') {
-                    const nextRoundBtnOnScore = document.createElement('button');
-                    nextRoundBtnOnScore.textContent = '次のラウンドへ';
-                    nextRoundBtnOnScore.style.marginTop = '20px';
-                    nextRoundBtnOnScore.style.padding = '10px 20px';
-                    nextRoundBtnOnScore.style.fontSize = '1.1em';
-
-                    nextRoundBtnOnScore.addEventListener('click', async () => {
-                         try {
-                            await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
-                            window.location.reload();
-                        } catch (error) {
-                            console.error('スコア画面からの次のラウンドへの移行で通信エラー:', error);
-                        }
-                    });
-                    scoreContainer.appendChild(nextRoundBtnOnScore);
-                }
-                
-                scoreContainer.style.display = 'block';
-            }
+        if (nextRoundBtn) {
+            nextRoundBtn.onclick = async () => {
+                await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
+                window.location.reload();
+            };
         }
-    } catch (error) {
-        console.error('スコア計算で通信エラー:', error);
+        if (calcScoreBtn) {
+            calcScoreBtn.onclick = async () => {
+                const response = await fetch(`${API_BASE_URL}/calculate_scores`);
+                const data = await response.json();
+                if (data.status === 'success') {
+                    displayScores(data.results);
+                }
+            };
+        }
+        if (resetBtn) {
+            resetBtn.onclick = async () => {
+                if (confirm("本当にゲーム全体をリセットしますか？")) {
+                    await fetch(`${API_BASE_URL}/reset_game`, { method: 'POST' });
+                    window.location.reload();
+                }
+            };
+        }
+    } else {
+        adminPanel.style.display = 'none';
+    }
+}
+
+/**
+ * スコアを画面に表示する関数
+ * @param {Array<Object>} results - サーバーから受け取った結果の配列
+ */
+function displayScores(results) {
+    const gameBoard = document.getElementById('game-board');
+    const scoreContainer = document.getElementById('score-container');
+    const adminPanel = document.getElementById('admin-panel');
+
+    gameBoard.style.display = 'none';
+    adminPanel.style.display = 'none';
+    scoreContainer.style.display = 'block';
+    scoreContainer.innerHTML = '<h2>スコアランキング</h2>';
+
+    const table = document.createElement('table');
+    table.innerHTML = `
+        <thead>
+            <tr>
+                <th>順位</th>
+                <th>プレイヤー</th>
+                <th>スコア</th>
+                <th>開いた枚数</th>
+            </tr>
+        </thead>
+    `;
+    const tbody = document.createElement('tbody');
+    results.forEach((res, index) => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+            <td>${index + 1}</td>
+            <td>${res.player}</td>
+            <td>${res.score}</td>
+            <td>${res.opened}</td>
+        `;
+        tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    scoreContainer.appendChild(table);
+
+    // 管理者の場合のみ「次のラウンドへ」ボタンを追加
+    if (myPlayerId === 'Admin') {
+        const nextRoundBtn = document.createElement('button');
+        nextRoundBtn.id = 'next-round-button-in-score';
+        nextRoundBtn.textContent = '次のラウンドへ';
+        nextRoundBtn.onclick = async () => {
+            await fetch(`${API_BASE_URL}/next_round`, { method: 'POST' });
+            window.location.reload();
+        };
+        scoreContainer.appendChild(nextRoundBtn);
     }
 }
 
