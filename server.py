@@ -60,10 +60,7 @@ def get_status():
         background_image = ROUND_IMAGES[safe_round_index]
         print("5. 背景画像を決定:", background_image)
 
-        # --- ▼▼▼ ここを修正 ▼▼▼ ---
-        # Adminの場合は、盤面表示用にPlayer1のシートを参照する
         sheet_to_fetch = 'Player1' if player_id == 'Admin' else player_id
-        # --- ▲▲▲ ここまで修正 ▲▲▲ ---
 
         player_sheet = spreadsheet.worksheet(sheet_to_fetch)
         print(f"6. '{sheet_to_fetch}'シートを取得成功。")
@@ -82,7 +79,7 @@ def get_status():
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
-# (他のAPI関数 ... /open_panel, /admin_open_panel, /next_round, /calculate_scores, /reset_game)
+# (他のAPI関数 ... /open_panel, /admin_open_panel)
 @app.route('/open_panel', methods=['POST'])
 def open_panel():
     data = request.json
@@ -113,6 +110,7 @@ def admin_open_panel():
         print(f"!!! admin_open_panelエラー: {e} !!!")
         return jsonify({"status": "error", "message": str(e)}), 500
 
+
 @app.route('/next_round', methods=['POST'])
 def next_round():
     print("\n--- /next_round が呼び出されました ---")
@@ -125,7 +123,11 @@ def next_round():
 
         presets_sheet = spreadsheet.worksheet('AdminPresets')
         n = new_round + 1
-        start_col = sum(range(2, n)) + 1
+        
+        start_col = 1
+        if new_round > 1:
+            start_col = sum(range(2, new_round + 1))
+
         end_col = start_col + n - 1
         preset_range = f'{gspread.utils.rowcol_to_a1(2, start_col)}:{gspread.utils.rowcol_to_a1(n + 1, end_col)}'
         print(f"2. AdminPresetsから範囲 '{preset_range}' を読み取ります。")
@@ -134,20 +136,32 @@ def next_round():
         for i in range(1, 9):
             player_id = f'Player{i}'
             player_sheet = spreadsheet.worksheet(player_id)
-            player_sheet.clear()
             
+            # --- ▼▼▼ より確実なリセット処理に変更 ▼▼▼ ---
+            # 1. まず、最大範囲(10x10)を空のセルで埋めて完全にクリアする
+            max_size = 10
+            max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
+            empty_board_data = [[''] * max_size for _ in range(max_size)]
+            player_sheet.update(max_range, empty_board_data)
+            print(f"中間報告: '{player_id}'シートを完全にクリアしました。")
+
+            # 2. その後、新しいラウンドのプリセットデータを書き込む
             update_cells = []
             for r, row_data in enumerate(preset_data):
                 for c, cell_value in enumerate(row_data):
-                    cell = gspread.Cell(row=r+1, col=c+1, value='2' if str(cell_value) == '1' else '0')
-                    update_cells.append(cell)
+                    if c < len(row_data):
+                        cell = gspread.Cell(row=r+1, col=c+1, value='2' if str(cell_value) == '1' else '0')
+                        update_cells.append(cell)
             if update_cells:
                 player_sheet.update_cells(update_cells, value_input_option='RAW')
+            # --- ▲▲▲ ここまで変更 ▲▲▲ ---
+
             print(f"3. '{player_id}'シートをプリセットで更新しました。")
         
         return jsonify({"status": "success", "new_round": new_round})
     except Exception as e:
         print(f"!!! /next_roundでエラー発生: {e} !!!")
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/calculate_scores', methods=['GET'])
@@ -184,6 +198,7 @@ def calculate_scores():
         return jsonify({"status": "success", "results": results})
     except Exception as e:
         print(f"!!! /calculate_scoresでエラー発生: {e} !!!")
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/reset_game', methods=['POST'])
@@ -206,6 +221,7 @@ def reset_game():
         return jsonify({"status": "success", "message": "ゲームがリセットされました。"})
     except Exception as e:
         print(f"!!! /reset_gameでエラー発生: {e} !!!")
+        traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
 
 if __name__ == "__main__":
