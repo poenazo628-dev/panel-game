@@ -107,9 +107,9 @@ def next_round():
         presets_sheet = spreadsheet.worksheet('AdminPresets')
         n = new_round + 1
         
-        # --- 読み取り範囲を動的に計算 ---
-        start_row = sum(i + 1 for i in range(1, new_round - 1)) + 2 if new_round > 1 else 2
-        start_col = sum(i + 1 for i in range(1, new_round)) + 1
+        # --- [修正] 読み取り範囲を動的に計算 ---
+        start_row = 2 # 開始行は常に2行目に固定
+        start_col = sum(i + 1 for i in range(1, new_round)) + 1 if new_round > 1 else 1
         
         end_row = start_row + n - 1
         end_col = start_col + n - 1
@@ -123,14 +123,14 @@ def next_round():
                 
                 max_size = 10
                 max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
-                player_sheet.update(max_range, [[''] * max_size for _ in range(max_size)])
+                player_sheet.update(max_range, [['0'] * max_size for _ in range(max_size)])
 
                 update_cells = []
                 for r_idx, row_data in enumerate(preset_data):
                     for c_idx, cell_value in enumerate(row_data):
-                        val = '2' if str(cell_value) == '1' else '0'
-                        cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value=val)
-                        update_cells.append(cell)
+                        if str(cell_value) == '1':
+                            cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value='2')
+                            update_cells.append(cell)
 
                 if update_cells:
                     player_sheet.update_cells(update_cells, value_input_option='RAW')
@@ -156,7 +156,13 @@ def calculate_scores():
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
                 all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
-                opened_count = sum(row.count('1') + row.count('2') for row in all_values if row)
+                
+                # --- [修正] より安全な枚数計算方法 ---
+                opened_count = 0
+                for row in all_values:
+                    for cell in row:
+                        if str(cell) == '1' or str(cell) == '2':
+                            opened_count += 1
                 
                 unopened_count = total_panels - opened_count
                 score = abs(unopened_count - opened_count)
