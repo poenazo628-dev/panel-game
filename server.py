@@ -176,22 +176,26 @@ def calculate_scores():
         results = []
         for i in range(1, 9):
             player_id = f'Player{i}'
-            player_sheet = spreadsheet.worksheet(player_id)
-            all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
-            opened_count = 0
-            for row in all_values:
-                for cell in row:
-                    if cell == '1' or cell == '2':
-                        opened_count += 1
-            
-            unopened_count = total_panels - opened_count
-            score = abs(unopened_count - opened_count)
-            results.append({"player": player_id, "score": score, "opened": opened_count})
+            # --- ▼▼▼ ここから修正 ▼▼▼ ---
+            try:
+                player_sheet = spreadsheet.worksheet(player_id)
+                all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
+                opened_count = 0
+                for row in all_values:
+                    for cell in row:
+                        if cell == '1' or cell == '2':
+                            opened_count += 1
+                
+                unopened_count = total_panels - opened_count
+                score = abs(unopened_count - opened_count)
+                results.append({"player": player_id, "score": score, "opened": opened_count})
+            except gspread.WorksheetNotFound:
+                print(f"警告: '{player_id}'シートが見つからなかったため、スコア計算から除外します。")
+                continue # 次のプレイヤーの処理に移る
+            # --- ▲▲▲ ここまで修正 ▲▲▲ ---
 
-        # --- ▼▼▼ ここを修正 ▼▼▼ ---
         # スコアの降順（大きい順）に並べ替える
         results.sort(key=lambda x: x['score'], reverse=True)
-        # --- ▲▲▲ ここまで修正 ▲▲▲ ---
         
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.append_row([f"Round {current_round} Results"])
@@ -229,4 +233,5 @@ def reset_game():
 
 if __name__ == "__main__":
     app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8080)))
+
 
