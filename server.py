@@ -118,14 +118,14 @@ def next_round():
         presets_sheet = spreadsheet.worksheet('AdminPresets')
         preset_range = PRESET_RANGES[new_round - 1]
         preset_data = presets_sheet.get(preset_range)
-
+        
         # --- [バグ修正] パネル引き継ぎ問題を完全に解決するロジック ---
         for i in range(1, 9):
             player_id = f'Player{i}'
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
                 n = new_round + 1
-
+                
                 # 1. メモリ上に、まず n x n の '0'で埋めた盤面を作る
                 new_grid = [['0'] * n for _ in range(n)]
 
@@ -135,12 +135,10 @@ def next_round():
                         if r_idx < n and c_idx < n:
                             if str(cell_value) == '1':
                                 new_grid[r_idx][c_idx] = '2'
-                
-                # 3. 完成した盤面を、スプレッドシートのA1セルから n x n の範囲に一気に書き込む
-                cell_list_to_update = player_sheet.range(1, 1, n, n)
-                for cell in cell_list_to_update:
-                    cell.value = new_grid[cell.row - 1][cell.col - 1]
-                player_sheet.update_cells(cell_list_to_update)
+
+                # 3. シートを一度完全にクリアしてから、完成した盤面を一気に書き込む
+                player_sheet.clear()
+                player_sheet.update('A1', new_grid, value_input_option='RAW')
 
             except gspread.WorksheetNotFound:
                 continue
@@ -165,7 +163,9 @@ def calculate_scores():
             player_id = f'Player{i}'
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
-                all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
+                # --- [バグ修正] より安全な方法でシートの全データを取得 ---
+                all_values = player_sheet.get_all_values()
+                # ----------------------------------------------------
                 
                 opened_count = 0
                 for row in all_values:
@@ -179,9 +179,7 @@ def calculate_scores():
             except gspread.WorksheetNotFound:
                 continue
         
-        # --- [修正] ご指摘通り、得点が高い方が上位 (降順) に変更 ---
         results.sort(key=lambda x: x['score'], reverse=True)
-        # ----------------------------------------------------
         
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.append_row([f"--- Round {current_round} ---"])
@@ -205,16 +203,14 @@ def get_final_scores():
                 continue
             if len(row) >= 2:
                 try:
-                    player_id, score = row[0], int(row[1])
-                    if player_id in total_scores:
-                        total_scores[player_id] += score
+                    player_id, score_str = row[0], row[1]
+                    if player_id in total_scores and score_str.isdigit():
+                        total_scores[player_id] += int(score_str)
                 except (ValueError, IndexError):
                     continue
         
         final_results = [{'player': pid, 'score': t_score} for pid, t_score in total_scores.items()]
-        # --- [修正] ご指摘通り、得点が高い方が上位 (降順) に変更 ---
         final_results.sort(key=lambda x: x['score'], reverse=True)
-        # ----------------------------------------------------
         return jsonify({"status": "success", "results": final_results})
     except Exception as e:
         traceback.print_exc()
@@ -235,6 +231,7 @@ def reset_game():
                 continue
         results_sheet = spreadsheet.worksheet('Results')
         results_sheet.clear()
+        results_sheet.append_row(['Round', 'PlayerID', 'Score', 'OpenedPanels']) # ヘッダーを再追加
         return jsonify({"status": "success", "message": "ゲームがリセットされました。"})
     except Exception as e:
         traceback.print_exc()
