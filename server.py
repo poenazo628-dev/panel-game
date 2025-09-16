@@ -119,30 +119,25 @@ def next_round():
         preset_range = PRESET_RANGES[new_round - 1]
         preset_data = presets_sheet.get(preset_range)
         
-        # --- [バグ修正] パネル引き継ぎ問題を完全に解決するロジック ---
         for i in range(1, 9):
             player_id = f'Player{i}'
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
                 n = new_round + 1
                 
-                # 1. メモリ上に、まず n x n の '0'で埋めた盤面を作る
                 new_grid = [['0'] * n for _ in range(n)]
 
-                # 2. その盤面の上に、AdminPresetsからの設定を上書きする
                 for r_idx, row_data in enumerate(preset_data):
                     for c_idx, cell_value in enumerate(row_data):
                         if r_idx < n and c_idx < n:
                             if str(cell_value) == '1':
                                 new_grid[r_idx][c_idx] = '2'
 
-                # 3. シートを一度完全にクリアしてから、完成した盤面を一気に書き込む
                 player_sheet.clear()
                 player_sheet.update('A1', new_grid, value_input_option='RAW')
 
             except gspread.WorksheetNotFound:
                 continue
-        # ----------------------------------------------------
         
         return jsonify({"status": "success", "new_round": new_round})
     except Exception as e:
@@ -163,9 +158,7 @@ def calculate_scores():
             player_id = f'Player{i}'
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
-                # --- [バグ修正] より安全な方法でシートの全データを取得 ---
                 all_values = player_sheet.get_all_values()
-                # ----------------------------------------------------
                 
                 opened_count = 0
                 for row in all_values:
@@ -182,7 +175,7 @@ def calculate_scores():
         results.sort(key=lambda x: x['score'], reverse=True)
         
         results_sheet = spreadsheet.worksheet('Results')
-        results_sheet.append_row([f"--- Round {current_round} ---"])
+        results_sheet.append_row([f"--- Round {current_round} ---", "", ""])
         for res in results:
             results_sheet.append_row([res['player'], res['score'], res['opened']])
 
@@ -199,7 +192,7 @@ def get_final_scores():
         total_scores = {f'Player{i}': 0 for i in range(1, 9)}
 
         for row in all_data:
-            if len(row) > 0 and isinstance(row[0], str) and row[0].startswith('---'):
+            if not row or (isinstance(row[0], str) and row[0].startswith('---')):
                 continue
             if len(row) >= 2:
                 try:
@@ -217,25 +210,40 @@ def get_final_scores():
         return jsonify({"status": "error", "message": str(e)}), 500
 
 
+# --- [バグ修正] 壊れていたリセット機能を、より安全で確実なものに修正 ---
 @app.route('/reset_game', methods=['POST'])
 def reset_game():
     try:
-        admin_sheet = spreadsheet.worksheet('AdminControl')
-        admin_sheet.update_cell(1, 2, '0')
+        # 1. AdminControlシートをリセット
+        try:
+            admin_sheet = spreadsheet.worksheet('AdminControl')
+            admin_sheet.update_cell(1, 2, '0')
+        except gspread.WorksheetNotFound:
+            print("リセット警告: AdminControlシートが見つかりません。")
 
+        # 2. 全プレイヤーシートをリセット
         for i in range(1, 9):
             try:
                 player_sheet = spreadsheet.worksheet(f'Player{i}')
                 player_sheet.clear()
             except gspread.WorksheetNotFound:
+                # プレイヤーシートがなくてもエラーにしない
                 continue
-        results_sheet = spreadsheet.worksheet('Results')
-        results_sheet.clear()
-        results_sheet.append_row(['Round', 'PlayerID', 'Score', 'OpenedPanels']) # ヘッダーを再追加
+        
+        # 3. Resultsシートをリセット
+        try:
+            results_sheet = spreadsheet.worksheet('Results')
+            results_sheet.clear()
+            # ヘッダーを再追加
+            results_sheet.append_row(['PlayerID', 'Score', 'OpenedPanels'])
+        except gspread.WorksheetNotFound:
+            print("リセット警告: Resultsシートが見つかりません。")
+
         return jsonify({"status": "success", "message": "ゲームがリセットされました。"})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+# --------------------------------------------------------------------
 
 # 500エラーハンドリング
 @app.errorhandler(Exception)
