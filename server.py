@@ -12,7 +12,21 @@ ROUND_IMAGES = [
     'tabetabe7.png', 'tabetabe8.png', 'tabetabe9.png'
 ]
 SPREADSHEET_NAME = 'tabetabe-panel'
-# ------------------------------------
+
+# --- [新機能] AdminPresetsシートの読み取り範囲を直接指定 ---
+# ここの値を変更すれば、プリセットのレイアウトを自由に変更できます。
+PRESET_RANGES = [
+    'A2:B3',    # Round 1 (2x2)
+    'C2:E4',    # Round 2 (3x3)
+    'F2:I5',    # Round 3 (4x4)
+    'J2:N6',    # Round 4 (5x5)
+    'O2:T7',    # Round 5 (6x6)
+    'U2:AA8',   # Round 6 (7x7)
+    'AB2:AI9',  # Round 7 (8x8)
+    'AJ2:AR10', # Round 8 (9x9)
+    'AS2:BB11'  # Round 9 (10x10)
+]
+# ----------------------------------------------------
 
 app = Flask(__name__)
 CORS(app)
@@ -34,11 +48,8 @@ except Exception as e:
 @app.route('/get_status')
 def get_status():
     player_id = request.args.get('player', 'Player1')
-
-    # --- [修正] Pingリクエストをここで処理 ---
     if player_id == 'ping':
         return jsonify({"status": "success", "message": "Server is awake."})
-    # ------------------------------------
 
     if not spreadsheet:
         return jsonify({"status": "error", "message": "Spreadsheet not connected"}), 500
@@ -50,7 +61,6 @@ def get_status():
         
         if current_round > 9:
             return jsonify({"status": "success", "round": "clear"})
-            
         if current_round == 0:
             return jsonify({"status": "success", "round": 0})
 
@@ -90,7 +100,8 @@ def admin_open_panel():
     row = data.get('row')
     col = data.get('col')
     try:
-        worksheet = spreadsheet.worksheet(user_id)
+        # 管理者モードで開けるのは常にPlayer1のシート（Admin画面で表示しているため）
+        worksheet = spreadsheet.worksheet('Player1')
         worksheet.update_cell(row, col, '2')
         return jsonify({"status": "success"})
     except Exception as e:
@@ -110,15 +121,11 @@ def next_round():
              return jsonify({"status": "success", "new_round": "clear"})
 
         presets_sheet = spreadsheet.worksheet('AdminPresets')
-        n = new_round + 1
         
-        start_row = sum(i for i in range(2, new_round + 1)) if new_round > 1 else 2
-        start_col = sum(i + 1 for i in range(1, new_round)) + 1 if new_round > 1 else 1
-        
-        end_row = start_row + n - 1
-        end_col = start_col + n - 1
-        preset_range = f'{gspread.utils.rowcol_to_a1(start_row, start_col)}:{gspread.utils.rowcol_to_a1(end_row, end_col)}'
+        # --- [修正] 計算をやめて、リストから直接範囲を取得 ---
+        preset_range = PRESET_RANGES[new_round - 1]
         preset_data = presets_sheet.get(preset_range)
+        # ----------------------------------------------------
 
         for i in range(1, 9):
             player_id = f'Player{i}'
@@ -128,14 +135,12 @@ def next_round():
                 max_size = 10
                 max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
                 
-                # より確実なクリア処理
                 clear_data = [[''] * max_size for _ in range(max_size)]
                 player_sheet.update(max_range, clear_data, value_input_option='RAW')
                 
                 update_cells = []
                 for r_idx, row_data in enumerate(preset_data):
                     for c_idx, cell_value in enumerate(row_data):
-                        # 数値の1と文字の'1'の両方に対応
                         if str(cell_value) == '1':
                             cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value='2')
                             update_cells.append(cell)
@@ -173,7 +178,7 @@ def calculate_scores():
                             opened_count += 1
                 
                 unopened_count = total_panels - opened_count
-                score = opened_count # スコア = 開いた枚数
+                score = opened_count 
                 results.append({"player": player_id, "score": score, "opened": opened_count})
             except gspread.WorksheetNotFound:
                 continue
