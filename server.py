@@ -35,6 +35,11 @@ except Exception as e:
 def get_status():
     player_id = request.args.get('player', 'Player1')
 
+    # --- [修正] Pingリクエストをここで処理 ---
+    if player_id == 'ping':
+        return jsonify({"status": "success", "message": "Server is awake."})
+    # ------------------------------------
+
     if not spreadsheet:
         return jsonify({"status": "error", "message": "Spreadsheet not connected"}), 500
 
@@ -107,8 +112,7 @@ def next_round():
         presets_sheet = spreadsheet.worksheet('AdminPresets')
         n = new_round + 1
         
-        # --- [修正] 読み取り範囲を動的に計算 ---
-        start_row = 2 # 開始行は常に2行目に固定
+        start_row = sum(i for i in range(2, new_round + 1)) if new_round > 1 else 2
         start_col = sum(i + 1 for i in range(1, new_round)) + 1 if new_round > 1 else 1
         
         end_row = start_row + n - 1
@@ -123,11 +127,15 @@ def next_round():
                 
                 max_size = 10
                 max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
-                player_sheet.update(max_range, [['0'] * max_size for _ in range(max_size)])
-
+                
+                # より確実なクリア処理
+                clear_data = [[''] * max_size for _ in range(max_size)]
+                player_sheet.update(max_range, clear_data, value_input_option='RAW')
+                
                 update_cells = []
                 for r_idx, row_data in enumerate(preset_data):
                     for c_idx, cell_value in enumerate(row_data):
+                        # 数値の1と文字の'1'の両方に対応
                         if str(cell_value) == '1':
                             cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value='2')
                             update_cells.append(cell)
@@ -146,7 +154,8 @@ def next_round():
 def calculate_scores():
     try:
         admin_sheet = spreadsheet.worksheet('AdminControl')
-        current_round = int(admin_sheet.cell(1, 2).value)
+        current_round_str = admin_sheet.cell(1, 2).value
+        current_round = int(current_round_str) if current_round_str and current_round_str.isdigit() else 1
         n = current_round + 1
         total_panels = n * n
         
@@ -157,7 +166,6 @@ def calculate_scores():
                 player_sheet = spreadsheet.worksheet(player_id)
                 all_values = player_sheet.get(f'A1:{gspread.utils.rowcol_to_a1(n, n)}')
                 
-                # --- [修正] より安全な枚数計算方法 ---
                 opened_count = 0
                 for row in all_values:
                     for cell in row:
@@ -165,7 +173,7 @@ def calculate_scores():
                             opened_count += 1
                 
                 unopened_count = total_panels - opened_count
-                score = abs(unopened_count - opened_count)
+                score = opened_count # スコア = 開いた枚数
                 results.append({"player": player_id, "score": score, "opened": opened_count})
             except gspread.WorksheetNotFound:
                 continue

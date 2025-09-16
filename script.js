@@ -98,17 +98,24 @@ async function handlePanelClick(panel, r, c) {
     if (panel.classList.contains('is-hidden')) return;
     
     const isAdminMode = document.getElementById('admin-mode-checkbox')?.checked;
-    if (myPlayerId === 'Admin' && !isAdminMode) return;
+    // プレイヤー画面では、管理者モードがなくてもクリックできるようにする
+    if (myPlayerId.startsWith('Player')) {
+         // 何もしない（処理を続ける）
+    } else if (myPlayerId === 'Admin' && !isAdminMode) {
+        return; // Adminでチェックなしの場合のみクリック不可
+    }
+
 
     panel.classList.add('is-hidden');
     
     const endpoint = (myPlayerId === 'Admin' && isAdminMode) ? '/admin_open_panel' : '/open_panel';
+    const userToSend = (myPlayerId === 'Admin' && !isAdminMode) ? 'Player1' : myPlayerId; // Adminがチェックなしでクリックした場合はPlayer1として扱う（本来は起こらないが念のため）
     
     try {
         await fetch(`${API_BASE_URL}${endpoint}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: myPlayerId, row: r + 1, col: c + 1 }),
+            body: JSON.stringify({ user: userToSend, row: r + 1, col: c + 1 }),
         });
     } catch (error) {
         console.error('パネルクリック通信エラー:', error);
@@ -137,6 +144,7 @@ function setupAdminControls() {
     }
     if (calcScoreBtn) {
         calcScoreBtn.onclick = async () => {
+             console.log("[管理者コントロール] 'スコアを計算'ボタンがクリックされました。");
             try {
                 const response = await fetch(`${API_BASE_URL}/calculate_scores`);
                 const data = await response.json();
