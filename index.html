@@ -9,25 +9,29 @@
 <body>
     <h1>パネルゲーム</h1>
 
-    <!-- 管理者用の操作パネル (最初は非表示) -->
+    <!-- ゲームの状態などを表示する場所 -->
+    <div id="info-display"></div>
+
+    <!-- ゲーム盤を表示する場所 -->
+    <div id="game-board"></div>
+
+    <!-- スコアランキングを表示する場所 (最初は非表示) -->
+    <div id="score-container" style="display: none;"></div>
+
+    <!-- 管理者用パネル (最初は非表示) -->
     <div id="admin-panel" style="display: none;">
+        <button id="next-round-button">次のラウンドへ</button>
+        <button id="calc-score-button">スコアを計算</button>
+        <button id="reset-game-button">ゲームをリセット</button>
         <label>
             <input type="checkbox" id="admin-mode-checkbox">
-            管理者としてパネルを開ける
+            管理者モード (パネルを開ける)
         </label>
-        <button id="next-round-button">次のラウンドへ</button>
-        <button id="calculate-score-button">スコアを計算</button>
-        <!-- ▼▼▼ 新しいボタンを追加 ▼▼▼ -->
-        <button id="reset-game-button">ゲームをリセット</button>
-        <!-- ▲▲▲ ここまで追加 ▲▲▲ -->
     </div>
-
-    <div id="info-display"></div>
-    <div id="game-board"></div>
-    <div id="score-container" style="display: none;"></div>
 
     <script src="script.js"></script>
 </body>
 </html>
+
 
 
