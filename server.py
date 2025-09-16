@@ -13,8 +13,7 @@ ROUND_IMAGES = [
 ]
 SPREADSHEET_NAME = 'tabetabe-panel'
 
-# --- [新機能] AdminPresetsシートの読み取り範囲を直接指定 ---
-# ここの値を変更すれば、プリセットのレイアウトを自由に変更できます。
+# --- AdminPresetsシートの読み取り範囲を直接指定 ---
 PRESET_RANGES = [
     'A2:B3',    # Round 1 (2x2)
     'C2:E4',    # Round 2 (3x3)
@@ -96,11 +95,9 @@ def open_panel():
 @app.route('/admin_open_panel', methods=['POST'])
 def admin_open_panel():
     data = request.json
-    user_id = data.get('user', 'Player1')
     row = data.get('row')
     col = data.get('col')
     try:
-        # 管理者モードで開けるのは常にPlayer1のシート（Admin画面で表示しているため）
         worksheet = spreadsheet.worksheet('Player1')
         worksheet.update_cell(row, col, '2')
         return jsonify({"status": "success"})
@@ -121,29 +118,22 @@ def next_round():
              return jsonify({"status": "success", "new_round": "clear"})
 
         presets_sheet = spreadsheet.worksheet('AdminPresets')
-        
-        # --- [修正] 計算をやめて、リストから直接範囲を取得 ---
         preset_range = PRESET_RANGES[new_round - 1]
         preset_data = presets_sheet.get(preset_range)
-        # ----------------------------------------------------
 
         for i in range(1, 9):
             player_id = f'Player{i}'
             try:
                 player_sheet = spreadsheet.worksheet(player_id)
-                
-                max_size = 10
-                max_range = f'A1:{gspread.utils.rowcol_to_a1(max_size, max_size)}'
-                
-                clear_data = [[''] * max_size for _ in range(max_size)]
-                player_sheet.update(max_range, clear_data, value_input_option='RAW')
+                player_sheet.clear()
                 
                 update_cells = []
                 for r_idx, row_data in enumerate(preset_data):
                     for c_idx, cell_value in enumerate(row_data):
-                        if str(cell_value) == '1':
-                            cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value='2')
-                            update_cells.append(cell)
+                        # プリセットが1なら管理者オープン(2)、それ以外は未オープン(0)をセット
+                        value_to_set = '2' if str(cell_value) == '1' else '0'
+                        cell = gspread.Cell(row=r_idx + 1, col=c_idx + 1, value=value_to_set)
+                        update_cells.append(cell)
 
                 if update_cells:
                     player_sheet.update_cells(update_cells, value_input_option='RAW')
@@ -162,7 +152,6 @@ def calculate_scores():
         current_round_str = admin_sheet.cell(1, 2).value
         current_round = int(current_round_str) if current_round_str and current_round_str.isdigit() else 1
         n = current_round + 1
-        total_panels = n * n
         
         results = []
         for i in range(1, 9):
@@ -177,7 +166,6 @@ def calculate_scores():
                         if str(cell) == '1' or str(cell) == '2':
                             opened_count += 1
                 
-                unopened_count = total_panels - opened_count
                 score = opened_count 
                 results.append({"player": player_id, "score": score, "opened": opened_count})
             except gspread.WorksheetNotFound:
@@ -186,14 +174,52 @@ def calculate_scores():
         results.sort(key=lambda x: x['score'], reverse=True)
         
         results_sheet = spreadsheet.worksheet('Results')
-        results_sheet.append_row([f"Round {current_round} Results"])
+        # --- [改善] 書き込み形式を 'Round', 'Player', 'Score' に変更 ---
         for res in results:
-            results_sheet.append_row([res['player'], res['score'], res['opened']])
+            results_sheet.append_row([current_round, res['player'], res['score']])
 
         return jsonify({"status": "success", "results": results})
     except Exception as e:
         traceback.print_exc()
         return jsonify({"status": "error", "message": str(e)}), 500
+
+# --- [新機能] 合計スコアを計算するAPI ---
+@app.route('/get_final_scores', methods=['GET'])
+def get_final_scores():
+    try:
+        results_sheet = spreadsheet.worksheet('Results')
+        all_data = results_sheet.get_all_values()
+        
+        total_scores = {}
+        for i in range(1, 9):
+            total_scores[f'Player{i}'] = 0
+
+        # ヘッダー行をスキップするために range(1, len(all_data)) を使う想定
+        # 今回はヘッダーがないので、全行を対象にする
+        for row in all_data:
+            if len(row) >= 3:
+                try:
+                    # row = [round_num, player_id, score]
+                    player_id = row[1]
+                    score = int(row[2])
+                    if player_id in total_scores:
+                        total_scores[player_id] += score
+                except (ValueError, IndexError):
+                    # スコアが数字でない行などはスキップ
+                    continue
+        
+        final_results = []
+        for player_id, total_score in total_scores.items():
+            final_results.append({'player': player_id, 'score': total_score})
+            
+        final_results.sort(key=lambda x: x['score'], reverse=True)
+
+        return jsonify({"status": "success", "results": final_results})
+
+    except Exception as e:
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": str(e)}), 500
+# ------------------------------------
 
 @app.route('/reset_game', methods=['POST'])
 def reset_game():
